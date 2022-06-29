@@ -1,0 +1,213 @@
+---
+title: "Simulated data"
+output: html_notebook
+---
+
+```{r}
+library(EpiEstim)
+library(caTools)
+library(tidyverse)
+files.sources = list.files(".")
+files.sources <- files.sources[!str_detect(files.sources, "vignette")]
+files.sources <- files.sources[!str_detect(files.sources, "data")]
+files.sources <- files.sources[!str_detect(files.sources, "plots")]
+
+for (i in 1:length(files.sources)) {
+  source(paste0(c(files.sources[i]), collapse = ''))
+}
+```
+
+# 1. Covid
+## Synthetic drop-off
+```{r}
+df <- read.csv("../../data/synthetic/synthetic1_dropoff.csv")
+I <- df$cases
+gen = read.csv('../../data/raw/covid_serial_interval.csv')
+```
+
+Create total infectiousness: cut-off w at 20 days. Also assume cases are zero before t = 0
+```{r}
+n_prev_cases <- 20
+w <- gen$w[1:n_prev_cases]
+w <- w / sum(w)
+lambda <- vector(length = length(I))
+
+I_prev = rep(0, n_prev_cases)
+I_prev[length(I_prev)] = 5
+I_prev[length(I_prev)-1] = 5
+I_prev[length(I_prev)-2] = 5
+I <- c(I_prev, I)
+
+for(i in seq_along(lambda)) {
+  I_past <- rev(I[i:(i + n_prev_cases - 1)])
+  lambda[i] <- sum(w * I_past)
+}
+lambda <- c(rep(0, n_prev_cases), lambda)
+```
+
+Priors
+```{r}
+Rprior = c(1, 2); a = 0.05
+```
+
+```{r}
+# Setup grid and noise parameters
+Rmin = 0.01; Rmax = 10; eta = 0.1
+
+# Uniform prior over grid of size m
+m = 1000; pR0 = (1/m)*rep(1, m)
+# Delimited grid defining space of R
+Rgrid = seq(Rmin, Rmax, length.out = m)
+
+# Time series lengths
+nflu = nrow(df)
+tflu = n_prev_cases + df$day
+```
+
+Estimate
+```{r}
+Rfilt_flu = epiFilter(Rgrid, m, eta, pR0, nflu, lambda[tflu], I[tflu], a)
+Rsmooth_flu = epiSmoother(Rgrid, m, Rfilt_flu[[4]], Rfilt_flu[[5]], nflu, Rfilt_flu[[6]], a)
+```
+
+Export R estimates
+```{r}
+results <- tibble(day=df$day,
+       R_filt=Rfilt_flu[[3]],
+       R_filt_lower_bound=Rfilt_flu[[2]][1,],
+       R_filt_upper_bound=Rfilt_flu[[2]][2,],
+       R_smooth=Rsmooth_flu[[3]],
+       R_smooth_lower_bound=Rsmooth_flu[[2]][1,],
+       R_smooth_upper_bound=Rsmooth_flu[[2]][2,])
+write.table(results, "../../data/synthetic/results/synthetic_1_R.csv",
+            row.names = FALSE, sep = ",")
+
+```
+
+## Slow drop-off: COVID
+```{r}
+df <- read.csv("../../data/synthetic/synthetic3_slowdropoff.csv")
+I <- df$cases
+```
+
+Create total infectiousness: cut-off w at 20 days. Also assume cases are zero before t = 0
+```{r}
+n_prev_cases <- 20
+w <- gen$w[1:n_prev_cases]
+w <- w / sum(w)
+lambda <- vector(length = length(I))
+
+I_prev = rep(0, n_prev_cases)
+I_prev[length(I_prev)] = 5
+I_prev[length(I_prev)-1] = 5
+I_prev[length(I_prev)-2] = 5
+I <- c(I_prev, I)
+
+for(i in seq_along(lambda)) {
+  I_past <- rev(I[i:(i + n_prev_cases - 1)])
+  lambda[i] <- sum(w * I_past)
+}
+lambda <- c(rep(0, n_prev_cases), lambda)
+```
+
+Priors
+```{r}
+Rprior = c(1, 2); a = 0.05
+```
+
+```{r}
+# Setup grid and noise parameters
+Rmin = 0.01; Rmax = 10; eta = 0.1
+
+# Uniform prior over grid of size m
+m = 1000; pR0 = (1/m)*rep(1, m)
+# Delimited grid defining space of R
+Rgrid = seq(Rmin, Rmax, length.out = m)
+
+# Time series lengths
+nflu = nrow(df)
+tflu = n_prev_cases + df$day
+```
+
+Estimate
+```{r}
+Rfilt_flu = epiFilter(Rgrid, m, eta, pR0, nflu, lambda[tflu], I[tflu], a)
+Rsmooth_flu = epiSmoother(Rgrid, m, Rfilt_flu[[4]], Rfilt_flu[[5]], nflu, Rfilt_flu[[6]], a)
+```
+
+Export R estimates
+```{r}
+results <- tibble(day=df$day,
+       R_filt=Rfilt_flu[[3]],
+       R_filt_lower_bound=Rfilt_flu[[2]][1,],
+       R_filt_upper_bound=Rfilt_flu[[2]][2,],
+       R_smooth=Rsmooth_flu[[3]],
+       R_smooth_lower_bound=Rsmooth_flu[[2]][1,],
+       R_smooth_upper_bound=Rsmooth_flu[[2]][2,])
+write.table(results, "../../data/synthetic/results/synthetic_3_R.csv",
+            row.names = FALSE, sep = ",")
+```
+
+## Drop-off then resurgence: Ebola
+```{r}
+df <- read.csv("../../data/synthetic/synthetic2_resurgence.csv")
+I <- df$cases
+gen = read.csv('../../data/synthetic/ebola_serial_interval.csv', header = F)
+```
+
+Create total infectiousness: cut-off w at 50 days. Also assume cases are zero before t = 0 (just to make total infectiousness easier to calculate).
+```{r}
+n_prev_cases <- 50
+w <- gen$V1[1:n_prev_cases]
+w <- w / sum(w)
+lambda <- vector(length = length(I))
+
+I_prev = rep(5, n_prev_cases)
+I <- c(I_prev, I)
+
+for(i in seq_along(lambda)) {
+  I_past <- rev(I[i:(i + n_prev_cases - 1)])
+  lambda[i] <- sum(w * I_past)
+}
+lambda <- c(rep(0, n_prev_cases), lambda)
+```
+
+Priors
+```{r}
+Rprior = c(1, 2); a = 0.05
+```
+
+```{r}
+# Setup grid and noise parameters
+Rmin = 0.01; Rmax = 10; eta = 0.1
+
+# Uniform prior over grid of size m
+m = 1000; pR0 = (1/m)*rep(1, m)
+# Delimited grid defining space of R
+Rgrid = seq(Rmin, Rmax, length.out = m)
+
+# Time series lengths: start on day after first day as otherwise lambda is zero on first two days causing NAs
+start_day <- 2
+nflu = nrow(df) - start_day
+tflu = n_prev_cases + df$day+ start_day
+tflu = tflu[1:(length(tflu) - start_day)]
+```
+
+Estimate
+```{r}
+Rfilt_flu = epiFilter(Rgrid, m, eta, pR0, nflu, lambda[tflu], I[tflu], a)
+Rsmooth_flu = epiSmoother(Rgrid, m, Rfilt_flu[[4]], Rfilt_flu[[5]], nflu, Rfilt_flu[[6]], a)
+```
+
+Export R estimates
+```{r}
+results <- tibble(day=df$day[start_day:(nflu + 1)],
+       R_filt=Rfilt_flu[[3]],
+       R_filt_lower_bound=Rfilt_flu[[2]][1,],
+       R_filt_upper_bound=Rfilt_flu[[2]][2,],
+       R_smooth=Rsmooth_flu[[3]],
+       R_smooth_lower_bound=Rsmooth_flu[[2]][1,],
+       R_smooth_upper_bound=Rsmooth_flu[[2]][2,])
+write.table(results, "../../data/synthetic/results/synthetic_2_R.csv",
+            row.names = FALSE, sep = ",")
+```
